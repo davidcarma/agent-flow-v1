@@ -70,18 +70,67 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         conversations: new Map(prev.conversations),
       }
 
-      switch (event.type) {
-        case 'agent_spawn':       handleAgentSpawn(event.payload, prev.currentTime, state, ctx); break
-        case 'agent_complete':    handleAgentComplete(event.payload, prev.currentTime, state, ctx); break
-        case 'agent_idle':        handleAgentIdle(event.payload, state); break
-        case 'model_detected':    handleModelDetected(event.payload, state, ctx); break
-        case 'tool_call_start':   handleToolCallStart(event.payload, prev.currentTime, state, ctx); break
-        case 'tool_call_end':     handleToolCallEnd(event.payload, prev.currentTime, state, ctx); break
-        case 'message':           handleMessage(event.payload, prev.currentTime, state); break
-        case 'context_update':    handleContextUpdate(event.payload, state); break
-        case 'subagent_dispatch': handleSubagentDispatch(event.payload, prev.currentTime, state); break
-        case 'subagent_return':   handleSubagentReturn(event.payload, prev.currentTime, state); break
-        case 'permission_requested': handlePermissionRequested(event.payload, prev.currentTime, state, ctx); break
+      // pjan session entities render as Agent Flow agents / messages / context.
+      const type = event.type
+      const payload = event.payload || {}
+      switch (type) {
+        case 'pjan_desk':
+        case 'pjan_stage':
+        case 'pjan_letter':
+        case 'pjan_pin':
+        case 'pjan_document':
+        case 'pjan_evidence_routes': {
+          const name = String(payload.name || payload.label || type)
+          handleAgentSpawn({
+            name,
+            isMain: type === 'pjan_letter' || type === 'pjan_desk',
+            task: String(payload.purpose || payload.task || type),
+            runtime: 'codex',
+            parent: payload.parent || undefined,
+          }, prev.currentTime, state, ctx)
+          if (payload.status === 'succeeded' || payload.status === 'done' || payload.status === 'failed') {
+            handleAgentComplete({ name }, prev.currentTime, state, ctx)
+          }
+          if (payload.detail || payload.message) {
+            handleMessage({
+              agent: name,
+              role: 'assistant',
+              content: String(payload.detail || payload.message),
+            }, prev.currentTime, state)
+          }
+          break
+        }
+        case 'pjan_economics': {
+          const agent = String(payload.agent || 'orchestrator')
+          handleContextUpdate({
+            agent,
+            tokens: Number(payload.tokens) || 0,
+            breakdown: payload.breakdown || {
+              systemPrompt: 0,
+              userMessages: 0,
+              toolResults: 0,
+              reasoning: 0,
+              subagentResults: 0,
+            },
+          }, state)
+          handleMessage({
+            agent,
+            role: 'assistant',
+            content: String(payload.summary || `cost $${payload.costUsd ?? '-'} · ${payload.tokens ?? 0} tok`),
+          }, prev.currentTime, state)
+          break
+        }
+        case 'agent_spawn':       handleAgentSpawn(payload, prev.currentTime, state, ctx); break
+        case 'agent_complete':    handleAgentComplete(payload, prev.currentTime, state, ctx); break
+        case 'agent_idle':        handleAgentIdle(payload, state); break
+        case 'model_detected':    handleModelDetected(payload, state, ctx); break
+        case 'tool_call_start':   handleToolCallStart(payload, prev.currentTime, state, ctx); break
+        case 'tool_call_end':     handleToolCallEnd(payload, prev.currentTime, state, ctx); break
+        case 'message':           handleMessage(payload, prev.currentTime, state); break
+        case 'context_update':    handleContextUpdate(payload, state); break
+        case 'subagent_dispatch': handleSubagentDispatch(payload, prev.currentTime, state); break
+        case 'subagent_return':   handleSubagentReturn(payload, prev.currentTime, state); break
+        case 'permission_requested': handlePermissionRequested(payload, prev.currentTime, state, ctx); break
       }
 
       // Stabilize references for unchanged collections to prevent

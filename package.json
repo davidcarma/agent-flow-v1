@@ -10,6 +10,7 @@
     "build:extension": "pnpm --filter agent-flow run build",
     "build:web": "pnpm --filter agent-flow-web run build",
     "build:webview": "pnpm --filter agent-flow-web run build:webview",
+    "build:embed": "pnpm --filter agent-flow-web run build:embed",
     "build:all": "pnpm run build:webview && pnpm run build:extension",
     "build:app": "node app/build.js",
     "test": "node --import tsx --test \"scripts/**/*.test.ts\" \"app/src/**/*.test.ts\" \"web/hooks/**/*.test.ts\""
@@ -18,5 +19,11 @@
     "concurrently": "^9.2.1",
     "esbuild": "^0.20.2",
     "tsx": "^4.21.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
   }
 }

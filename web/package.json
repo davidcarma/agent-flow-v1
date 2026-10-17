@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "build:webview": "vite build --config vite.config.webview.ts"
+    "build:webview": "vite build --config vite.config.webview.ts",
+    "build:embed": "vite build --config vite.config.embed.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

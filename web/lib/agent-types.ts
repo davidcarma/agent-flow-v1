@@ -161,6 +161,14 @@ export interface SimulationEvent {
     | 'subagent_dispatch'
     | 'subagent_return'
     | 'permission_requested'
+    /** pjan desk / stage / letter / pin / economics aliases (normalized in processEvent). */
+    | 'pjan_desk'
+    | 'pjan_stage'
+    | 'pjan_letter'
+    | 'pjan_pin'
+    | 'pjan_document'
+    | 'pjan_economics'
+    | 'pjan_evidence_routes'
   payload: Record<string, unknown>
   sessionId?: string
 }
