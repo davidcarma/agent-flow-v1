@@ -18,6 +18,7 @@ import { processEvent, type ProcessEventContext } from './simulation/process-eve
 import { computeNextFrame } from './simulation/animate'
 import { snapVisualState } from './simulation/snap-visual-state'
 import { shouldCommitFrame } from './simulation/ui-throttle'
+import { replayEmbedSnapshot } from './simulation/embed-snapshot'
 
 export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
   const { useMockData = true, externalEvents, onExternalEventsConsumed, sessionFilter, sessionFilterRef: externalFilterRef, disable1MContext = false } = options
@@ -105,7 +106,17 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     sim.alpha(0.3).restart()
     for (let i = 0; i < 15; i++) sim.tick()
     sim.stop()
-  }, [])
+    // Manual d3 ticks do not dispatch the tick listener. Publish the settled
+    // snapshot positions explicitly so paused terminal graphs do not overlap.
+    if (options.snapshotEvents !== undefined) {
+      for (const node of sim.nodes()) {
+        const agent = agents.get(node.id)
+        if (agent && !agent.pinned && node.x !== undefined && node.y !== undefined) {
+          agents.set(node.id, { ...agent, x: node.x, y: node.y })
+        }
+      }
+    }
+  }, [options.snapshotEvents !== undefined])
 
   // ─── Tool slot placement ─────────────────────────────────────────────────
   const findToolSlot = useCallback((
@@ -165,9 +176,26 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
       getContextWindowSize,
       blockIdCounter,
       skipForceSync: skipForceSyncRef.current,
+      embedMode: options.snapshotEvents !== undefined,
     }
     return processEvent(event, prev, ctx)
-  }, [syncForceSimulation, findToolSlot, getContextWindowSize])
+  }, [syncForceSimulation, findToolSlot, getContextWindowSize, options.snapshotEvents !== undefined])
+
+  const replaySnapshot = useCallback((events: readonly SimulationEvent[], targetTime = Infinity) => replayEmbedSnapshot(events, sessionFilter || '', {
+    syncForceSimulation, findToolSlot, getContextWindowSize,
+    blockIdCounter: { current: 0 }, skipForceSync: true, embedMode: true,
+  }, frameRef.current, targetTime), [sessionFilter, syncForceSimulation, findToolSlot, getContextWindowSize])
+
+  const receivedSnapshotRef = useRef(false)
+  useEffect(() => {
+    if (!options.snapshotEvents) return
+    const next = replaySnapshot(options.snapshotEvents)
+    const firstNonemptySnapshot = !receivedSnapshotRef.current && options.snapshotEvents.length > 0
+    if (options.snapshotEvents.length > 0) receivedSnapshotRef.current = true
+    // Auto-start only the first live snapshot, never override later explicit pauses.
+    commitState({ ...next, isPlaying: options.snapshotTerminal ? false : firstNonemptySnapshot || frameRef.current.isPlaying })
+    syncForceSimulation(next.agents, next.edges)
+  }, [options.snapshotEvents, options.snapshotTerminal, replaySnapshot, commitState, syncForceSimulation])
 
   // ─── Animation loop ──────────────────────────────────────────────────────
   // Reads/writes frameRef directly. Only calls commitState when new events
@@ -271,10 +299,17 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
       useMockData,
       mockScenarioLength: MOCK_SCENARIO.length,
       mockScenarioEndTime: MOCK_SCENARIO.length > 0 ? MOCK_SCENARIO[MOCK_SCENARIO.length - 1].time : 0,
+      retainEntities: options.snapshotEvents !== undefined,
     })
 
     // Write to frameRef (canvas reads this every frame)
-    frameRef.current = result
+    frameRef.current = options.snapshotEvents !== undefined && options.snapshotTerminal && result.currentTime >= result.maxTimeReached
+      ? { ...result, currentTime: result.maxTimeReached, isPlaying: false }
+      : result
+    if (!frameRef.current.isPlaying) {
+      commitState(frameRef.current)
+      return
+    }
 
     // Force tick — updates agent positions in frameRef
     if (forceSimRef.current) forceSimRef.current.tick()
@@ -294,7 +329,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
     animationRef.current = requestAnimationFrame(animateRef.current)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionFilter intentionally omitted; we read sessionFilterRef.current
-  }, [processEventWithContext, useMockData, externalEvents, onExternalEventsConsumed])
+  }, [processEventWithContext, useMockData, externalEvents, onExternalEventsConsumed, options.snapshotEvents, options.snapshotTerminal, commitState])
 
   animateRef.current = animate
 
@@ -326,6 +361,10 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
   }, [])
 
   const restart = useCallback((keepActive = false) => {
+    if (options.snapshotEvents !== undefined) {
+      commitState({ ...replaySnapshot(options.snapshotEvents, 0), isPlaying: true })
+      return
+    }
     blockIdCounter.current = 0
     if (!keepActive) {
       commitState(createEmptyState({ isPlaying: true, speed: frameRef.current.speed }))
@@ -365,7 +404,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     }
     commitState(next)
     setTimeout(() => syncForceSimulation(next.agents, next.edges), 0)
-  }, [syncForceSimulation, commitState])
+  }, [syncForceSimulation, commitState, options.snapshotEvents, replaySnapshot])
 
   const updateAgentPosition = useCallback((agentId: string, x: number, y: number) => {
     // Drag updates — write to frameRef only (canvas reads it, no React render)
@@ -383,6 +422,10 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
   /** Seek to a specific time — replays events from scratch up to targetTime */
   const seekToTime = useCallback((targetTime: number) => {
+    if (options.snapshotEvents !== undefined) {
+      commitState(replaySnapshot(options.snapshotEvents, targetTime))
+      return
+    }
     const prev = frameRef.current
     const events = useMockData ? MOCK_SCENARIO : prev.eventLog
 
@@ -409,7 +452,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
     commitState(replayState)
     setTimeout(() => syncForceSimulation(replayState.agents, replayState.edges), 0)
-  }, [processEventWithContext, useMockData, syncForceSimulation, commitState])
+  }, [processEventWithContext, useMockData, syncForceSimulation, commitState, options.snapshotEvents, replaySnapshot])
 
   // ─── Session state save/restore ──────────────────────────────────────────
   const saveSnapshot = useCallback((): { simState: SimulationState; blockId: number } => ({

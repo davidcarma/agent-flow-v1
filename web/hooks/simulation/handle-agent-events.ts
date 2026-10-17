@@ -128,6 +128,10 @@ export function handleAgentComplete(
       entry.endTime = currentTime
     }
 
+    // Embed snapshots carry explicit child/tool outcomes. A parent's completion
+    // cannot turn a failed child or an unfinished call into a successful result.
+    if (ctx.embedMode) return
+
     const agentsToComplete = [name]
     for (const [childId, childAgent] of state.agents) {
       if (childAgent.parentId === name && childAgent.state !== 'complete') {

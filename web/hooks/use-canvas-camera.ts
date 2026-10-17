@@ -186,7 +186,7 @@ export function useCanvasCamera({
   }, [mainCanvasRef])
 
   /** Call from draw loop to update inertia and auto-fit lerp */
-  const updateCamera = useCallback((isDragging: boolean, pauseAutoFit?: boolean) => {
+  const updateCamera = useCallback((isDragging: boolean, pauseAutoFit?: boolean, snap = false) => {
     const transform = transformRef.current
 
     // Pan inertia
@@ -209,7 +209,7 @@ export function useCanvasCamera({
     // Smooth lerp toward target
     const target = targetTransformRef.current
     if (target) {
-      const lerpSpeed = ANIM.autoFitLerp
+      const lerpSpeed = snap ? 1 : ANIM.autoFitLerp
       const t = transformRef.current
       const nx = t.x + (target.x - t.x) * lerpSpeed
       const ny = t.y + (target.y - t.y) * lerpSpeed

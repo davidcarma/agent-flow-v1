@@ -128,10 +128,16 @@ export function wrapText(ctx: CanvasRenderingContext2D, text: string, maxW: numb
       }
       // Force-break if a single token still exceeds maxW
       while (measureTextCached(ctx, currentLine) > maxW && currentLine.length > 1) {
-        let breakAt = currentLine.length - 1
-        while (breakAt > 1 && measureTextCached(ctx, currentLine.slice(0, breakAt)) > maxW) { breakAt-- }
-        lines.push(currentLine.slice(0, breakAt))
-        currentLine = leading + currentLine.slice(breakAt)
+        // Binary search instead of measuring every shrinking suffix of a large
+        // unbroken JSON/URL token. Always consume characters, including indent.
+        let lo = 1, hi = currentLine.length - 1
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2)
+          if (measureTextCached(ctx, currentLine.slice(0, mid)) <= maxW) lo = mid
+          else hi = mid - 1
+        }
+        lines.push(currentLine.slice(0, lo))
+        currentLine = currentLine.slice(lo)
       }
     }
     if (currentLine) lines.push(currentLine)

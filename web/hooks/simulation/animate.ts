@@ -10,6 +10,7 @@ export interface AnimateOptions {
   useMockData: boolean
   mockScenarioLength: number
   mockScenarioEndTime: number
+  retainEntities?: boolean
 }
 
 function animateAgents(agents: SimulationState['agents'], deltaTime: number, currentTime: number): SimulationState['agents'] {
@@ -159,8 +160,10 @@ export function computeNextFrame(prev: SimulationState, deltaTime: number, newTi
       const newEdgesRaw = animateEdges(currentState.edges, deltaTime)
       const newToolCallsRaw = animateToolCalls(currentState.toolCalls, deltaTime, newTime)
 
-      const { agents: newAgents, toolCalls: newToolCalls, edges: filteredEdges } =
-        cleanupFaded(newAgentsRaw, newToolCallsRaw, newEdgesRaw, currentState.agents, currentState.toolCalls)
+      const { agents: newAgents, toolCalls: newToolCalls, edges: filteredEdges } = options.retainEntities
+        ? { agents: new Map([...newAgentsRaw].map(([id, agent]) => [id, { ...agent, opacity: 1, scale: 1 }])),
+            toolCalls: new Map([...newToolCallsRaw].map(([id, tool]) => [id, { ...tool, opacity: 1 }])), edges: newEdgesRaw }
+        : cleanupFaded(newAgentsRaw, newToolCallsRaw, newEdgesRaw, currentState.agents, currentState.toolCalls)
 
       const newDiscoveries = animateDiscoveries(currentState.discoveries, deltaTime, newTime)
       const newParticles = animateParticles(currentState.particles, deltaTime, currentState.speed)

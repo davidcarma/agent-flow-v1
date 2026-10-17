@@ -5,6 +5,7 @@ import {
   SimulationEvent,
   type TimelineEntry,
   type TimelineBlock,
+  type AgentState,
 } from '@/lib/agent-types'
 import type { SimulationState, ConversationMessage } from './types'
 import { handleAgentSpawn, handleAgentComplete, handleAgentIdle, handlePermissionRequested, handleModelDetected } from './handle-agent-events'
@@ -18,6 +19,8 @@ export interface ProcessEventContext {
   getContextWindowSize: (modelId?: string) => number
   blockIdCounter: { current: number }
   skipForceSync: boolean
+  /** Host snapshots own each entity's lifecycle; never infer child completion. */
+  embedMode?: boolean
 }
 
 /** Mutable collections that handlers mutate in place during a single processEvent call. */
@@ -49,6 +52,17 @@ export function pushTimelineBlock(
     label: block.label,
     color: block.color,
   })
+}
+
+export function pjanAgentState(status: unknown): AgentState {
+  switch (String(status || '').toLowerCase()) {
+    case 'running': case 'active': case 'thinking': return 'thinking'
+    case 'failed': case 'error': case 'aborted': case 'cancelled': case 'canceled': return 'error'
+    case 'succeeded': case 'success': case 'done': case 'complete': case 'completed': case 'resolved': return 'complete'
+    case 'paused': case 'skipped': return 'paused'
+    case 'waiting_permission': return 'waiting_permission'
+    default: return 'idle'
+  }
 }
 
 /** Shallow-compare two Maps by reference equality of values */
@@ -88,16 +102,21 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
             runtime: 'codex',
             parent: payload.parent || undefined,
           }, prev.currentTime, state, ctx)
-          if (payload.status === 'succeeded' || payload.status === 'done' || payload.status === 'failed') {
-            handleAgentComplete({ name }, prev.currentTime, state, ctx)
-          }
-          if (payload.detail || payload.message) {
+          // Full metadata belongs in the inspector, not canvas text wrapping.
+          // Serializing large legal bodies into native bubbles blocks the UI.
+          if (payload.message || (!ctx.embedMode && payload.detail)) {
             handleMessage({
               agent: name,
               role: 'assistant',
-              content: String(payload.detail || payload.message),
+              content: ctx.embedMode ? String(payload.message) : typeof payload.detail === 'string' ? payload.detail : JSON.stringify(payload.detail ?? payload.message),
             }, prev.currentTime, state)
           }
+          const node = state.agents.get(name)
+          if (node) state.agents.set(name, {
+            ...node, state: pjanAgentState(payload.status),
+            sourceStatus: String(payload.status || 'pending'), detail: payload.detail,
+            completeTime: pjanAgentState(payload.status) === 'complete' ? prev.currentTime : undefined,
+          })
           break
         }
         case 'pjan_economics': {

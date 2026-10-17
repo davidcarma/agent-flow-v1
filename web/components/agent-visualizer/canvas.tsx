@@ -41,12 +41,16 @@ interface CanvasProps {
   onDiscoveryClick?: (discoveryId: string | null) => void
   selectedDiscoveryId?: string | null
   showCostOverlay?: boolean
+  /** Embed-only: pause decorative animation, retain interactive one-shot redraws. */
+  animationEnabled?: boolean
+  suspendRendering?: boolean
 }
 
 export function AgentCanvas({
   simulationRef,
   selectedAgentId, hoveredAgentId, showStats, showHexGrid, zoomToFitTrigger, pauseAutoFit,
   onAgentClick, onAgentHover, onAgentDrag, onContextMenu, onToolCallClick, selectedToolCallId, onDiscoveryClick, selectedDiscoveryId, showCostOverlay,
+  animationEnabled = true, suspendRendering = false,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
@@ -167,8 +171,11 @@ export function AgentCanvas({
   // re-subscribing when the callback identity changes.
   const drawRef = useRef<(timestamp: number) => void>(() => {})
 
+  const renderPolicyRef = useRef({ animationEnabled, suspendRendering })
+  renderPolicyRef.current = { animationEnabled, suspendRendering }
   const draw = useCallback((timestamp: number) => {
-    animationRef.current = requestAnimationFrame((ts) => drawRef.current(ts))
+    if (renderPolicyRef.current.suspendRendering) return
+    if (renderPolicyRef.current.animationEnabled) animationRef.current = requestAnimationFrame((ts) => drawRef.current(ts))
 
     const canvas = mainCanvasRef.current
     if (!canvas) return
@@ -197,7 +204,7 @@ export function AgentCanvas({
       } = drawPropsRef.current
       const transform = transformRef.current
 
-      const deltaTime = lastFrameTimeRef.current ? (timestamp - lastFrameTimeRef.current) / 1000 : ANIM_SPEED.defaultDeltaTime
+      const deltaTime = renderPolicyRef.current.animationEnabled ? (lastFrameTimeRef.current ? Math.min(0.1, (timestamp - lastFrameTimeRef.current) / 1000) : ANIM_SPEED.defaultDeltaTime) : 0
       lastFrameTimeRef.current = timestamp
       timeRef.current += deltaTime
       if (simTime != null) simTimeRef.current = simTime
@@ -213,7 +220,7 @@ export function AgentCanvas({
       }
 
       // Camera physics (inertia + auto-fit)
-      updateCamera(isDragging, pauseAutoFit)
+      updateCamera(isDragging, pauseAutoFit, !renderPolicyRef.current.animationEnabled)
 
       // Floaty agent drag
       updateDragLerp(agents, onAgentDrag)
@@ -333,11 +340,29 @@ export function AgentCanvas({
   drawRef.current = draw
 
   useEffect(() => {
-    const loop = (timestamp: number) => drawRef.current(timestamp)
-    animationRef.current = requestAnimationFrame(loop)
-    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- drawRef is stable; rAF loop set up once
-  }, [])
+    if (suspendRendering) return
+    lastFrameTimeRef.current = 0
+    animationRef.current = requestAnimationFrame(ts => drawRef.current(ts))
+    return () => cancelAnimationFrame(animationRef.current)
+  }, [animationEnabled, suspendRendering])
+
+  useEffect(() => {
+    if (!animationEnabled && !suspendRendering) drawRef.current(performance.now())
+  })
+
+  useEffect(() => {
+    const canvas = mainCanvasRef.current
+    if (!canvas || animationEnabled || suspendRendering) return
+    const redraw = () => {
+      cancelAnimationFrame(animationRef.current)
+      animationRef.current = requestAnimationFrame(ts => drawRef.current(ts))
+    }
+    for (const type of ['mousemove', 'mouseup', 'wheel', 'dblclick']) canvas.addEventListener(type, redraw)
+    return () => {
+      for (const type of ['mousemove', 'mouseup', 'wheel', 'dblclick']) canvas.removeEventListener(type, redraw)
+      cancelAnimationFrame(animationRef.current)
+    }
+  }, [animationEnabled, suspendRendering])
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden" style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>

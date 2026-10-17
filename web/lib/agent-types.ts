@@ -42,6 +42,9 @@ export interface Agent {
   scale: number
   /** Queued text bubbles shown on canvas — newest pushed to end */
   messageBubbles: MessageBubble[]
+  /** Exact host status and full metadata, only set by the pjan embed. */
+  sourceStatus?: string
+  detail?: unknown
 }
 
 export interface MessageBubble {
@@ -60,6 +63,8 @@ export interface MessageBubble {
 // Rich tool call with actual content
 export interface ToolCallNode {
   id: string
+  callId?: string
+  detail?: unknown
   agentId: string
   toolName: string
   state: 'running' | 'complete' | 'error'
@@ -148,6 +153,7 @@ export interface Particle {
 }
 
 export interface SimulationEvent {
+  eventId?: string
   time: number
   type:
     | 'agent_spawn'

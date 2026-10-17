@@ -17,6 +17,7 @@ export function handleToolCallStart(
   const agentName = asString(payload.agent)
   const toolName = asString(payload.tool)
   const args = asString(payload.args)
+  const callId = asString(payload.callId)
   const inputData = (payload.inputData && typeof payload.inputData === 'object' && !Array.isArray(payload.inputData))
     ? payload.inputData as Record<string, unknown> : undefined
   const agent = state.agents.get(agentName)
@@ -26,7 +27,7 @@ export function handleToolCallStart(
     // created within the last 3 seconds (race between Hook Server and Session Watcher)
     let isDuplicate = false
     for (const tc of state.toolCalls.values()) {
-      if (tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running' && (currentTime - tc.startTime) < TOOL_DEDUP_WINDOW_S) {
+      if (callId ? tc.agentId === agentName && tc.callId === callId : tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running' && (currentTime - tc.startTime) < TOOL_DEDUP_WINDOW_S) {
         isDuplicate = true
         break
       }
@@ -40,12 +41,12 @@ export function handleToolCallStart(
       toolCalls: agent.toolCalls + 1
     })
 
-    const toolId = `tool-${agentName}-${toolName}-${currentTime}`
+    const toolId = callId ? `tool-${agentName}-${callId}` : `tool-${agentName}-${toolName}-${currentTime}`
 
     const pos = ctx.findToolSlot(agent, state.agents, state.toolCalls, currentTime)
 
     state.toolCalls.set(toolId, {
-      id: toolId, agentId: agentName, toolName,
+      id: toolId, agentId: agentName, toolName, callId: callId || undefined, detail: payload.detail,
       state: 'running',
       args,
       inputData,
@@ -107,6 +108,10 @@ export function handleToolCallEnd(
   const isError = asBoolean(payload.isError)
   const errorMessage = typeof payload.errorMessage === 'string' ? payload.errorMessage : undefined
   const agent = state.agents.get(agentName)
+  const callId = asString(payload.callId)
+  const matchedCall = Array.from(state.toolCalls.values()).find(tc =>
+    tc.agentId === agentName && tc.state === 'running' && (callId ? tc.callId === callId : tc.toolName === toolName))
+  if (callId && !matchedCall) return
 
   if (agent) {
     state.agents.set(agentName, {
@@ -118,8 +123,8 @@ export function handleToolCallEnd(
 
     const toolState: 'error' | 'complete' = isError ? 'error' : 'complete'
     for (const [id, tc] of state.toolCalls) {
-      if (tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running') {
-        state.toolCalls.set(id, { ...tc, state: toolState, completeTime: currentTime, result, tokenCost, errorMessage: isError ? (errorMessage || result) : undefined })
+      if (tc.agentId === agentName && (callId ? tc.callId === callId : tc.toolName === toolName) && tc.state === 'running') {
+        state.toolCalls.set(id, { ...tc, detail: payload.detail ?? tc.detail, state: toolState, completeTime: currentTime, result, tokenCost, errorMessage: isError ? (errorMessage || result) : undefined })
 
         const edgeId = `edge-${id}`
         // Snap any still-traveling outgoing particle to the end
@@ -152,7 +157,7 @@ export function handleToolCallEnd(
 
     // File attention token cost
     if (tokenCost) {
-      const matchedTc = Array.from(state.toolCalls.values()).find(tc => tc.agentId === agentName && tc.toolName === toolName)
+      const matchedTc = matchedCall
       const filePath = extractFilePath(matchedTc?.inputData, matchedTc?.args)
       if (filePath) {
         const existing = state.fileAttention.get(filePath)

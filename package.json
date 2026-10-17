@@ -13,7 +13,7 @@
     "build:embed": "pnpm --filter agent-flow-web run build:embed",
     "build:all": "pnpm run build:webview && pnpm run build:extension",
     "build:app": "node app/build.js",
-    "test": "node --import tsx --test \"scripts/**/*.test.ts\" \"app/src/**/*.test.ts\" \"web/hooks/**/*.test.ts\""
+    "test": "TSX_TSCONFIG_PATH=web/tsconfig.json node --import tsx --test \"scripts/**/*.test.ts\" \"app/src/**/*.test.ts\" \"web/hooks/**/*.test.ts\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

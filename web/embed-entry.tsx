@@ -7,7 +7,7 @@ function readBootstrap() {
   const sessionId = String(params.get('sessionId') || '').trim()
   const eventsUrl = String(params.get('eventsUrl') || '').trim()
   const metaUrl = String(params.get('metaUrl') || '').trim()
-  return { sessionId, eventsUrl, metaUrl }
+  return { sessionId, eventsUrl, metaUrl, hostManaged: params.get('host') === '1' }
 }
 
 const rootElement = document.getElementById('root')
@@ -20,5 +20,6 @@ root.render(
     sessionId={bootstrap.sessionId || null}
     eventsUrl={bootstrap.eventsUrl || null}
     metaUrl={bootstrap.metaUrl || null}
+    hostManaged={bootstrap.hostManaged}
   />,
 )

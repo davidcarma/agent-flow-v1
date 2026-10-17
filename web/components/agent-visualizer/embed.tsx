@@ -1,8 +1,8 @@
 "use client"
 
 /**
- * pjan.ai iframe embed: one session via EventSource / JSON poll.
- * No VS Code bridge. Session filter drops other sessions' events.
+ * pjan.ai iframe embed: strict host snapshots, or legacy EventSource / JSON.
+ * host=1 performs no network I/O. Native canvas and controls remain available.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -18,14 +18,23 @@ import { stopPropagationHandlers } from './shared-ui'
 import type { SimulationEvent } from '@/lib/agent-types'
 import { TIMING } from '@/lib/agent-types'
 import { COLORS } from '@/lib/colors'
+import { acceptsHostMessage, terminalSnapshot, type EmbedSnapshot } from '@/hooks/simulation/embed-snapshot'
 
 type EmbedProps = {
   sessionId: string | null
   eventsUrl: string | null
   metaUrl?: string | null
+  hostManaged?: boolean
 }
 
-export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
+export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl, hostManaged = false }: EmbedProps) {
+  const [snapshot, setSnapshot] = useState<EmbedSnapshot | null>(null)
+  const [visible, setVisible] = useState(true)
+  const [documentVisible, setDocumentVisible] = useState(() => !document.hidden)
+  const [filter, setFilter] = useState('')
+  const [inspectedId, setInspectedId] = useState<string | null>(null)
+  const revisionRef = useRef<number | string | null>(null)
+  const emptyEvents = useMemo<SimulationEvent[]>(() => [], [])
   const [pending, setPending] = useState<SimulationEvent[]>([])
   const [statusLabel, setStatusLabel] = useState('waiting')
   const [showCostOverlay, setShowCostOverlay] = useState(false)
@@ -43,7 +52,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
     for (const raw of batch) {
       if (!raw || typeof raw !== 'object') continue
       if (filter && raw.sessionId && raw.sessionId !== filter) continue
-      const key = `${raw.sessionId || ''}:${raw.type}:${Number(raw.time) || 0}:${JSON.stringify(raw.payload || {}).slice(0, 160)}`
+      const key = raw.eventId || JSON.stringify(raw)
       if (seenIds.current.has(key)) continue
       seenIds.current.add(key)
       next.push({ ...raw, sessionId: raw.sessionId || filter || undefined })
@@ -58,19 +67,35 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
   // Host panel fallback when Agent Flow API routes are not yet loaded in the running process.
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return
+      if (!acceptsHostMessage(event, window.location.origin, window.parent, sessionId)) return
       const data = event.data
-      if (!data || data.source !== 'pjan:agent-flow' || data.type !== 'events') return
-      if (sessionId && data.sessionId && data.sessionId !== sessionId) return
-      const events = Array.isArray(data.events) ? data.events : []
-      ingest(events)
-      setStatusLabel(`postMessage · ${sessionId || 'session'}`)
+      if (data.type === 'visibility' && typeof data.visible === 'boolean') {
+        setVisible(data.visible)
+        return
+      }
+      if (data.type === 'snapshot' && Array.isArray(data.events)) {
+        if (data.revision === revisionRef.current) return
+        if (typeof data.revision === 'number' && typeof revisionRef.current === 'number' && data.revision < revisionRef.current) return
+        revisionRef.current = data.revision
+        setSnapshot({ ...data, inventory: Array.isArray(data.inventory) ? data.inventory : [], summary: data.summary || {} })
+        setStatusLabel(`snapshot ${data.revision} · ${data.summary?.status || 'waiting'}`)
+        return
+      }
+      if (!hostManaged && data.type === 'events') ingest(Array.isArray(data.events) ? data.events : [])
     }
     window.addEventListener('message', onMessage)
+    if (sessionId) window.parent.postMessage({ source: 'agent-flow:embed', type: 'ready', sessionId }, window.location.origin)
     return () => window.removeEventListener('message', onMessage)
-  }, [sessionId, ingest])
+  }, [sessionId, ingest, hostManaged])
 
   useEffect(() => {
+    const changed = () => setDocumentVisible(!document.hidden)
+    document.addEventListener('visibilitychange', changed)
+    return () => document.removeEventListener('visibilitychange', changed)
+  }, [])
+
+  useEffect(() => {
+    if (hostManaged) return
     if (!eventsUrl) {
       setStatusLabel(sessionId ? 'no eventsUrl' : 'missing sessionId')
       return undefined
@@ -142,7 +167,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
       es?.close()
       if (pollTimer) clearInterval(pollTimer)
     }
-  }, [eventsUrl, metaUrl, sessionId, ingest])
+  }, [eventsUrl, metaUrl, sessionId, ingest, hostManaged])
 
   const {
     frameRef,
@@ -169,14 +194,21 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
     onExternalEventsConsumed: consumeEvents,
     sessionFilter: sessionId,
     sessionFilterRef,
+    snapshotEvents: hostManaged || snapshot ? snapshot?.events || emptyEvents : undefined,
+    snapshotTerminal: terminalSnapshot(snapshot),
   })
 
   const selection = useSelectionState({ agents, toolCalls, discoveries })
 
   useEffect(() => {
+    if (hostManaged) return
     const timer = setTimeout(() => play(), TIMING.autoPlayDelayMs)
     return () => clearTimeout(timer)
-  }, [play])
+  }, [play, hostManaged])
+
+  useEffect(() => {
+    if (!visible || !documentVisible) pause()
+  }, [visible, documentVisible, pause, isPlaying])
 
   const selectedAgent = selection.selectedAgentId
     ? agents.get(selection.selectedAgentId) || null
@@ -187,10 +219,21 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
 
   const handlePlayPause = useCallback(() => {
     if (isPlaying) pause()
-    else play()
-  }, [isPlaying, pause, play])
+    else if (visible && documentVisible) play()
+  }, [isPlaying, pause, play, visible, documentVisible])
 
   const timelineEvents = useMemo(() => [], [])
+  const inventory = snapshot?.inventory || []
+  const selectedNativeId = selection.selectedToolCallId || selection.selectedAgentId
+  const selectedTool = selection.selectedToolCallId ? toolCalls.get(selection.selectedToolCallId) : null
+  const inspected = inventory.find(item => item.id === (inspectedId || selectedTool?.callId || selectedNativeId))
+    || (selectedTool ? { id: selectedTool.id, kind: 'tool', label: selectedTool.toolName, status: selectedTool.state, detail: selectedTool } : null)
+    || (selectedAgent ? { id: selectedAgent.id, kind: 'agent', label: selectedAgent.name, status: selectedAgent.sourceStatus || selectedAgent.state, detail: selectedAgent.detail || selectedAgent } : null)
+  const selectEntity = (id: string | null) => {
+    setInspectedId(id)
+    if (id && agents.has(id)) selection.handleAgentClick(id)
+  }
+  const summary = snapshot?.summary
 
   if (!sessionId) {
     return (
@@ -210,6 +253,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
           style={{ background: 'rgba(8,12,22,0.85)', color: '#8fa3bf', border: '1px solid rgba(56,189,248,0.25)' }}
         >
           pjan · {sessionId.slice(0, 16)} · {statusLabel}
+          {summary && <div data-testid="embed-summary" className="mt-1 text-xs">Tools {summary.toolCount ?? 0} · LLM {summary.llmCount ?? 0} · Tokens {summary.tokens ?? 0} · Cost ${Number(summary.costUsd || 0).toFixed(4)} · Evidence {summary.evidenceCount ?? 0}</div>}
         </div>
 
         {isEmpty && (
@@ -223,29 +267,43 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
 
         <AgentCanvas
           simulationRef={frameRef}
+          animationEnabled={visible && documentVisible && isPlaying}
+          suspendRendering={!visible || !documentVisible}
           selectedAgentId={selection.selectedAgentId}
           hoveredAgentId={selection.hoveredAgentId}
           showStats={false}
           showHexGrid
           zoomToFitTrigger={0}
           pauseAutoFit={false}
-          onAgentClick={selection.handleAgentClick}
+          onAgentClick={(id) => { setInspectedId(null); selection.handleAgentClick(id) }}
           onAgentHover={selection.setHoveredAgentId}
           onAgentDrag={updateAgentPosition}
           onContextMenu={selection.handleContextMenu}
-          onToolCallClick={selection.handleToolCallClick}
+          onToolCallClick={(id) => { setInspectedId(null); selection.handleToolCallClick(id) }}
           selectedToolCallId={selection.selectedToolCallId}
           onDiscoveryClick={selection.handleDiscoveryClick}
           selectedDiscoveryId={selection.selectedDiscoveryId}
           showCostOverlay={showCostOverlay}
         />
 
-        <MessageFeedPanel
+        {snapshot && <aside aria-label="Session inventory" className="absolute right-2 top-2 bottom-20 z-30 flex flex-col rounded border text-xs" style={{ width: 'min(360px, 45vw)', background: 'rgba(8,12,24,.95)', borderColor: '#334155', color: '#d1e4f4' }} {...stopPropagationHandlers}>
+          <div className="p-2 font-mono">Session inventory ({inventory.length})</div>
+          <input aria-label="Filter inventory" placeholder="Filter entities" value={filter} onChange={e => setFilter(e.target.value)} className="mx-2 p-2 rounded bg-slate-900 border border-slate-700" />
+          <div className="overflow-auto p-2" style={{ maxHeight: inspected ? '35%' : '85%' }}>
+            {inventory.filter(item => `${item.kind} ${item.label} ${item.status} ${item.id}`.toLowerCase().includes(filter.toLowerCase())).map(item => <button key={item.id} className="block w-full text-left p-2 rounded hover:bg-slate-800" style={{ background: inspected?.id === item.id ? '#1e293b' : undefined }} onClick={() => selectEntity(item.id)}><span className="text-sky-300">{item.kind}</span> · {item.label}<div className="text-slate-400">{item.status || 'pending'}</div></button>)}
+          </div>
+          {inspected && <section aria-label="Entity details" className="border-t border-slate-700 p-2 overflow-auto flex-1 min-h-0">
+            <div className="font-bold">{inspected.label} · {inspected.status}</div>
+            <pre className="mt-2 whitespace-pre-wrap break-words select-text" style={{ overflowWrap: 'anywhere' }}>{JSON.stringify(inspected, null, 2)}</pre>
+          </section>}
+        </aside>}
+
+        {!snapshot && <MessageFeedPanel
           conversations={conversations}
           agents={agents}
-          onAgentClick={selection.handleAgentClick}
+          onAgentClick={(id) => { setInspectedId(null); selection.handleAgentClick(id) }}
           selectedAgentId={selection.selectedAgentId}
-        />
+        />}
 
         {selectedAgent && selection.selectedAgentWorldPos && (
           <div {...stopPropagationHandlers}>
@@ -268,11 +326,11 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl }: EmbedProps) {
           currentTime={currentTime}
           totalDuration={Math.max(maxTimeReached, currentTime)}
           onPlayPause={handlePlayPause}
-          onRestart={restart}
+          onRestart={() => { if (visible && documentVisible) restart() }}
           onSpeedChange={setSpeed}
           onSeek={seekToTime}
           timelineEvents={timelineEvents}
-          eventCount={pending.length}
+          eventCount={snapshot?.events.length ?? pending.length}
           onEnterReview={() => setShowCostOverlay((v) => !v)}
           isReviewing={false}
         />
