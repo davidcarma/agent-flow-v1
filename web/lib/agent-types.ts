@@ -44,6 +44,9 @@ export interface Agent {
   messageBubbles: MessageBubble[]
   /** Exact host status and full metadata, only set by the pjan embed. */
   sourceStatus?: string
+  /** Human-facing label and semantic entity kind supplied by an embed host. */
+  displayName?: string
+  entityKind?: string
   detail?: unknown
 }
 

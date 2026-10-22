@@ -113,7 +113,10 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
           }
           const node = state.agents.get(name)
           if (node) state.agents.set(name, {
-            ...node, state: pjanAgentState(payload.status),
+            ...node,
+            displayName: String(payload.label || payload.purpose || payload.name || type),
+            entityKind: String(payload.kind || type.replace(/^pjan_/, 'stage')),
+            state: pjanAgentState(payload.status),
             sourceStatus: String(payload.status || 'pending'), detail: payload.detail,
             completeTime: pjanAgentState(payload.status) === 'complete' ? prev.currentTime : undefined,
           })

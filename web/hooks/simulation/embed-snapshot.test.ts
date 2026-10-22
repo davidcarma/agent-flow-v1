@@ -37,6 +37,17 @@ test('full replacement updates long metadata, removes obsolete nodes and preserv
   assert.equal(state.agents.get('desk')?.messageBubbles.length, 0)
 })
 
+test('hosted work keeps a meaningful label and semantic kind separate from its stable id', () => {
+  const state = replayEmbedSnapshot([
+    event('stage', 'pjan_stage', { name: 'workflow:freeze-bag', label: 'Freeze evidence bag', kind: 'workflow', status: 'running' }),
+    event('desk', 'pjan_desk', { name: 'desk:design-control', label: 'Design control review', kind: 'desk', status: 'done' }),
+  ], 'proof', ctx)
+  assert.equal(state.agents.get('workflow:freeze-bag')?.displayName, 'Freeze evidence bag')
+  assert.equal(state.agents.get('workflow:freeze-bag')?.entityKind, 'workflow')
+  assert.equal(state.agents.get('desk:design-control')?.displayName, 'Design control review')
+  assert.equal(state.agents.get('desk:design-control')?.entityKind, 'desk')
+})
+
 test('large unbroken and over-indented bubble text always progresses with bounded measurements', () => {
   let measurements = 0
   const context = { font: 'test', measureText(text: string) { measurements++; return { width: text.length * 7 } } } as CanvasRenderingContext2D

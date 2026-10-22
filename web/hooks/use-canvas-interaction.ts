@@ -175,23 +175,27 @@ export function useCanvasInteraction({
     dragTargetRef.current = null
   }, [screenToCanvas, findAgentAt, findBubbleAgentAt, findToolCallAt, findDiscoveryAt, drawPropsRef, panVelocityRef])
 
-  // Wheel handler attached as native event (passive: false) to allow preventDefault
+  // Wheel zooms toward the cursor. Drag still pans. Pinch and mouse notches
+  // keep the discrete step; trackpad pixel scrolls scale with magnitude.
   const handleWheelRef = useRef<(e: WheelEvent) => void>(() => {})
   handleWheelRef.current = (e: WheelEvent) => {
     e.preventDefault()
     userHasNavigatedRef.current = true
-    if (e.ctrlKey || e.metaKey) {
-      const delta = e.deltaY > 0 ? CAMERA.zoomStepDown : CAMERA.zoomStepUp
-      const rect = mainCanvasRef.current?.getBoundingClientRect()
-      if (!rect) return
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      const prev = transformRef.current
-      const newScale = Math.max(CAMERA.minZoom, Math.min(CAMERA.maxZoom, prev.scale * delta))
-      transformRef.current = { scale: newScale, x: mouseX - (mouseX - prev.x) * (newScale / prev.scale), y: mouseY - (mouseY - prev.y) * (newScale / prev.scale) }
-    } else {
-      const prev = transformRef.current
-      transformRef.current = { ...prev, x: prev.x - e.deltaX, y: prev.y - e.deltaY }
+    const dominant = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+    if (!dominant) return
+    const rect = mainCanvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const factor = (e.deltaMode !== 0 || e.ctrlKey || e.metaKey)
+      ? (dominant > 0 ? CAMERA.zoomStepDown : CAMERA.zoomStepUp)
+      : Math.exp(-dominant * 0.0015)
+    const mouseX = e.clientX - rect.left
+    const mouseY = e.clientY - rect.top
+    const prev = transformRef.current
+    const newScale = Math.max(CAMERA.minZoom, Math.min(CAMERA.maxZoom, prev.scale * factor))
+    transformRef.current = {
+      scale: newScale,
+      x: mouseX - (mouseX - prev.x) * (newScale / prev.scale),
+      y: mouseY - (mouseY - prev.y) * (newScale / prev.scale),
     }
   }
   useEffect(() => {

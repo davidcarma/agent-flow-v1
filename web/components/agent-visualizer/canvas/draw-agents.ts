@@ -306,13 +306,35 @@ function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
   }
 }
 
+const ENTITY_COLORS: Record<string, string> = {
+  workflow: COLORS.entityWorkflow,
+  codex: COLORS.entityCodex,
+  llm: COLORS.entityLlm,
+  stage: COLORS.entityStage,
+  desk: COLORS.entityDesk,
+  worker: COLORS.entityWorker,
+  document: COLORS.entityDocument,
+  pin: COLORS.entityPin,
+  letter: COLORS.entityLetter,
+  evidence: COLORS.entityEvidence,
+  'evidence-routes': COLORS.entityEvidence,
+  brief: COLORS.entityBrief,
+  'follow-up': COLORS.entityBrief,
+  activity: COLORS.entityActivity,
+}
+
+function entityColor(agent: Agent): string | null {
+  return agent.entityKind ? ENTITY_COLORS[agent.entityKind] || COLORS.entityStage : null
+}
+
 function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean) {
-  ctx.fillStyle = isHovered ? COLORS.textPrimary : COLORS.textDim
-  ctx.font = '10px monospace'
+  const semanticColor = entityColor(agent)
+  ctx.fillStyle = isHovered ? COLORS.textPrimary : semanticColor || COLORS.textDim
+  ctx.font = `${semanticColor ? 'bold ' : ''}10px monospace`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  const maxLabelW = r * AGENT_DRAW.labelWidthMultiplier
-  const agentLabel = truncateText(ctx, agent.name, maxLabelW)
+  const maxLabelW = Math.max(r * AGENT_DRAW.labelWidthMultiplier, semanticColor ? 210 : 0)
+  const agentLabel = truncateText(ctx, agent.displayName || agent.name, maxLabelW)
   ctx.fillText(agentLabel, agent.x, agent.y + r + AGENT_DRAW.labelYOffset)
 }
 
@@ -342,7 +364,7 @@ export function drawAgents(
 ) {
   for (const [id, agent] of agents) {
     const radius = agent.isMain ? NODE.radiusMain : NODE.radiusSub
-    const color = getStateColor(agent.state)
+    const color = entityColor(agent) || getStateColor(agent.state)
     const isHovered = id === hoveredAgentId
     const isSelected = id === selectedAgentId
 

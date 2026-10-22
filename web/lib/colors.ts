@@ -81,6 +81,21 @@ export const COLORS = {
   discoveryFinding: '#66ffaa',
   discoveryCode: '#ffbb44',
 
+  // Hosted workflow entity kinds. LLM/agent nodes keep state colours; these
+  // distinguish the actual non-model work visible around them.
+  entityWorkflow: '#38bdf8',
+  entityCodex: '#60a5fa',
+  entityLlm: '#818cf8',
+  entityStage: '#a78bfa',
+  entityDesk: '#f59e0b',
+  entityWorker: '#c084fc',
+  entityDocument: '#22d3ee',
+  entityPin: '#fb7185',
+  entityLetter: '#34d399',
+  entityEvidence: '#2dd4bf',
+  entityBrief: '#fbbf24',
+  entityActivity: '#94a3b8',
+
   // Session tab states
   tabSelectedBg: 'rgba(100, 200, 255, 0.15)',
   tabInactiveBg: 'rgba(100, 200, 255, 0.03)',

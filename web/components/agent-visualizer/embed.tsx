@@ -228,7 +228,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl, hostManaged = f
   const selectedTool = selection.selectedToolCallId ? toolCalls.get(selection.selectedToolCallId) : null
   const inspected = inventory.find(item => item.id === (inspectedId || selectedTool?.callId || selectedNativeId))
     || (selectedTool ? { id: selectedTool.id, kind: 'tool', label: selectedTool.toolName, status: selectedTool.state, detail: selectedTool } : null)
-    || (selectedAgent ? { id: selectedAgent.id, kind: 'agent', label: selectedAgent.name, status: selectedAgent.sourceStatus || selectedAgent.state, detail: selectedAgent.detail || selectedAgent } : null)
+    || (selectedAgent ? { id: selectedAgent.id, kind: selectedAgent.entityKind || 'agent', label: selectedAgent.displayName || selectedAgent.name, status: selectedAgent.sourceStatus || selectedAgent.state, detail: selectedAgent.detail || selectedAgent } : null)
   const selectEntity = (id: string | null) => {
     setInspectedId(id)
     if (id && agents.has(id)) selection.handleAgentClick(id)

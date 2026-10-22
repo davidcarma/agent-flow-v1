@@ -4,6 +4,11 @@ import { TOOL_MAX_CARD_W, TOOL_DRAW } from '@/lib/canvas-constants'
 import { truncateText } from './draw-misc'
 import { measureTextCached } from './render-cache'
 
+export function toolCardLines(tool: Pick<ToolCallNode, 'toolName' | 'args'>): [string, string | null] {
+  if (tool.toolName === 'vault_search') return ['vault_search', tool.args.slice(0, 20)]
+  return [`${tool.toolName}: ${tool.args}`, null]
+}
+
 export function drawToolCalls(
   ctx: CanvasRenderingContext2D,
   toolCalls: Map<string, ToolCallNode>,
@@ -19,11 +24,12 @@ export function drawToolCalls(
     ctx.globalAlpha = tool.opacity
 
     ctx.font = `${TOOL_DRAW.fontSize}px monospace`
-    const toolLabel = `${tool.toolName}: ${tool.args}`
-    const label = truncateText(ctx, toolLabel, TOOL_MAX_CARD_W - 12)
+    const [primaryLine, parameterLine] = toolCardLines(tool)
+    const measuredLine = parameterLine && measureTextCached(ctx, parameterLine) > measureTextCached(ctx, primaryLine) ? parameterLine : primaryLine
+    const label = truncateText(ctx, measuredLine, TOOL_MAX_CARD_W - 12)
     const textWidth = Math.min(measureTextCached(ctx, label) + 12, TOOL_MAX_CARD_W)
     const cardW = Math.max(60, textWidth)
-    const cardH = (!isRunning && (tool.tokenCost || isError)) ? TOOL_DRAW.expandedHeight : TOOL_DRAW.collapsedHeight
+    const cardH = parameterLine || (!isRunning && (tool.tokenCost || isError)) ? TOOL_DRAW.expandedHeight : TOOL_DRAW.collapsedHeight
     const cardX = tool.x - cardW / 2
     const cardY = tool.y - cardH / 2
 
@@ -73,7 +79,8 @@ export function drawToolCalls(
       ctx.restore()
     }
 
-    const truncatedLabel = truncateText(ctx, toolLabel, cardW - 8)
+    const truncatedLabel = truncateText(ctx, primaryLine, cardW - 8)
+    const truncatedParams = parameterLine ? truncateText(ctx, parameterLine, cardW - 8) : null
 
     ctx.font = `${TOOL_DRAW.fontSize}px monospace`
     ctx.textAlign = 'center'
@@ -81,7 +88,11 @@ export function drawToolCalls(
 
     if (isRunning) {
       ctx.fillStyle = COLORS.tool
-      ctx.fillText(truncatedLabel, tool.x, tool.y)
+      ctx.fillText(truncatedLabel, tool.x, tool.y - (truncatedParams ? TOOL_DRAW.twoLineOffset : 0))
+      if (truncatedParams) {
+        ctx.fillStyle = COLORS.textMuted
+        ctx.fillText(truncatedParams, tool.x, tool.y + TOOL_DRAW.twoLineOffset + 2)
+      }
     } else if (isError) {
       ctx.fillStyle = COLORS.error
       ctx.fillText(truncateText(ctx, `${tool.toolName}: FAILED`, cardW - 8), tool.x, tool.y - TOOL_DRAW.twoLineOffset)
@@ -89,10 +100,13 @@ export function drawToolCalls(
       ctx.fillStyle = COLORS.error + 'aa'
       ctx.fillText(truncateText(ctx, tool.errorMessage || tool.result || '', cardW - 8), tool.x, tool.y + TOOL_DRAW.twoLineOffset + 2)
     } else {
-      // Completed card: show action + file path (most useful info at a glance)
+      // Completed vault searches keep their operation and short parameters on separate lines.
       ctx.fillStyle = COLORS.return
-      ctx.fillText(truncatedLabel, tool.x, tool.y - TOOL_DRAW.twoLineOffset)
-      if (tool.tokenCost) {
+      ctx.fillText(truncatedLabel, tool.x, tool.y - ((truncatedParams || tool.tokenCost) ? TOOL_DRAW.twoLineOffset : 0))
+      if (truncatedParams) {
+        ctx.fillStyle = COLORS.textMuted
+        ctx.fillText(truncatedParams, tool.x, tool.y + TOOL_DRAW.twoLineOffset + 2)
+      } else if (tool.tokenCost) {
         // Token cost as dim text below
         ctx.fillStyle = COLORS.tool + '90'
         ctx.font = `${TOOL_DRAW.tokenFontSize}px monospace`

@@ -27,3 +27,6 @@ extension/.vscode/
 extension/package-lock.json
 
 .DS_Store
+
+# Stray npm install under the pnpm workspace
+web/package-lock.json
