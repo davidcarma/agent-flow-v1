@@ -4,8 +4,39 @@ import { TOOL_MAX_CARD_W, TOOL_DRAW } from '@/lib/canvas-constants'
 import { truncateText } from './draw-misc'
 import { measureTextCached } from './render-cache'
 
+/** The value a call is actually acting on, rather than JSON boilerplate. */
+export function toolArgumentValue(args: string): string {
+  const raw = String(args || '').trim()
+  if (!raw) return ''
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      for (const key of ['path', 'query', 'id', 'file', 'url', 'name']) {
+        if (typeof parsed[key] === 'string' && parsed[key].trim()) return parsed[key].trim()
+      }
+      const first = Object.values(parsed).find((value) => typeof value === 'string' && value.trim())
+      if (typeof first === 'string') return first.trim()
+    }
+  } catch {
+    // Not JSON (a plain command or phrase): keep the text as written.
+  }
+  return raw
+}
+
+/** The note being read, not a vault path that every card shares. */
+export function vaultTarget(args: string): string {
+  const value = toolArgumentValue(args)
+  if (!value) return ''
+  if (!value.includes('/') && !/\.md$/i.test(value)) return value
+  const parts = value.replace(/^\/+/, '').replace(/^vault\//i, '').split('/').filter(Boolean)
+  if (!parts.length) return value
+  let leaf = parts[parts.length - 1]
+  if (/^_index\.md$/i.test(leaf) && parts.length > 1) leaf = parts[parts.length - 2]
+  return leaf.replace(/\.md$/i, '')
+}
+
 export function toolCardLines(tool: Pick<ToolCallNode, 'toolName' | 'args'>): [string, string | null] {
-  if (tool.toolName === 'vault_search') return ['vault_search', tool.args.slice(0, 20)]
+  if (tool.toolName === 'vault_search') return ['vault_search', vaultTarget(tool.args) || null]
   return [`${tool.toolName}: ${tool.args}`, null]
 }
 
