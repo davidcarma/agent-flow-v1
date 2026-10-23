@@ -81,6 +81,8 @@ export interface ToolCallNode {
   startTime: number
   completeTime?: number // when the tool call completed (for minimum display duration)
   opacity: number
+  /** Set once the operator drags the card; layout must keep their position. */
+  pinned?: boolean
 }
 
 // Discovery — something the agent found and "pinned"

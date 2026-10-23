@@ -406,6 +406,16 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     setTimeout(() => syncForceSimulation(next.agents, next.edges), 0)
   }, [syncForceSimulation, commitState, options.snapshotEvents, replaySnapshot])
 
+  const updateToolPosition = useCallback((toolCallId: string, x: number, y: number) => {
+    // Same drag path as agents: frame only, no React render per mouse move.
+    const prev = frameRef.current
+    const tool = prev.toolCalls.get(toolCallId)
+    if (!tool) return
+    const nextTools = new Map(prev.toolCalls)
+    nextTools.set(toolCallId, { ...tool, x, y, pinned: true })
+    frameRef.current = { ...prev, toolCalls: nextTools }
+  }, [])
+
   const updateAgentPosition = useCallback((agentId: string, x: number, y: number) => {
     // Drag updates — write to frameRef only (canvas reads it, no React render)
     const prev = frameRef.current
@@ -493,6 +503,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     conversations: state.conversations,
     play, pause, restart, setSpeed, seekToTime,
     updateAgentPosition,
+    updateToolPosition,
     saveSnapshot, restoreSnapshot,
   }
 }

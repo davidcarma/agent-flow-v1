@@ -13,6 +13,7 @@ interface InteractionCallbacks {
   onAgentClick: (agentId: string | null) => void
   onAgentHover: (agentId: string | null) => void
   onAgentDrag: (agentId: string, x: number, y: number) => void
+  onToolCallDrag?: (toolCallId: string, x: number, y: number) => void
   onContextMenu: (e: React.MouseEvent, type: 'agent' | 'edge' | 'canvas', id?: string) => void
   onToolCallClick?: (toolCallId: string | null) => void
   onDiscoveryClick?: (discoveryId: string | null) => void
@@ -45,11 +46,13 @@ export function useCanvasInteraction({
 }: InteractionOptions) {
   const [isDragging, setIsDragging] = useState(false)
   const isDraggingRef = useRef(false)
-  const dragTargetRef = useRef<{ type: 'canvas' | 'agent'; id?: string; startX: number; startY: number } | null>(null)
+  const dragTargetRef = useRef<{ type: 'canvas' | 'agent' | 'tool'; id?: string; startX: number; startY: number } | null>(null)
   isDraggingRef.current = isDragging
 
   // Floaty agent drag
   const dragLerpRef = useRef<{ targetX: number; targetY: number; agentId: string } | null>(null)
+  // Tool call cards drag the same way, keeping their own position.
+  const toolDragLerpRef = useRef<{ targetX: number; targetY: number; toolCallId: string } | null>(null)
 
   // Pan tracking
   const lastPanPosRef = useRef({ x: 0, y: 0, time: 0 })
@@ -81,14 +84,17 @@ export function useCanvasInteraction({
     if (e.button === 0) {
       panVelocityRef.current = { vx: 0, vy: 0, active: false }
       setIsDragging(true)
+      const toolCallId = agentId ? null : findToolCallAt(pos.x, pos.y)
       if (agentId) {
         dragTargetRef.current = { type: 'agent', id: agentId, startX: e.clientX, startY: e.clientY }
+      } else if (toolCallId) {
+        dragTargetRef.current = { type: 'tool', id: toolCallId, startX: e.clientX, startY: e.clientY }
       } else {
         dragTargetRef.current = { type: 'canvas', startX: e.clientX, startY: e.clientY }
         lastPanPosRef.current = { x: e.clientX, y: e.clientY, time: performance.now() }
       }
     }
-  }, [screenToCanvas, findAgentAt, panVelocityRef])
+  }, [screenToCanvas, findAgentAt, findToolCallAt, panVelocityRef])
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const pos = screenToCanvas(e.clientX, e.clientY)
@@ -119,6 +125,11 @@ export function useCanvasInteraction({
         const screenDist = Math.abs(e.clientX - dragTarget.startX) + Math.abs(e.clientY - dragTarget.startY)
         if (screenDist > ANIM.dragThresholdPx) {
           dragLerpRef.current = { targetX: pos.x, targetY: pos.y, agentId: dragTarget.id }
+        }
+      } else if (dragTarget.type === 'tool' && dragTarget.id) {
+        const screenDist = Math.abs(e.clientX - dragTarget.startX) + Math.abs(e.clientY - dragTarget.startY)
+        if (screenDist > ANIM.dragThresholdPx) {
+          toolDragLerpRef.current = { targetX: pos.x, targetY: pos.y, toolCallId: dragTarget.id }
         }
       }
     }
@@ -171,6 +182,11 @@ export function useCanvasInteraction({
       drawPropsRef.current.onAgentDrag(dragLerpRef.current.agentId, dragLerpRef.current.targetX, dragLerpRef.current.targetY)
       dragLerpRef.current = null
     }
+    if (toolDragLerpRef.current) {
+      const { toolCallId, targetX, targetY } = toolDragLerpRef.current
+      drawPropsRef.current.onToolCallDrag?.(toolCallId, targetX, targetY)
+      toolDragLerpRef.current = null
+    }
     setIsDragging(false)
     dragTargetRef.current = null
   }, [screenToCanvas, findAgentAt, findBubbleAgentAt, findToolCallAt, findDiscoveryAt, drawPropsRef, panVelocityRef])
@@ -221,14 +237,20 @@ export function useCanvasInteraction({
     setIsDragging(false)
     dragTargetRef.current = null
     dragLerpRef.current = null
+    toolDragLerpRef.current = null
     if (lastHoveredIdRef.current !== null) {
       lastHoveredIdRef.current = null
       drawPropsRef.current.onAgentHover(null)
     }
   }, [drawPropsRef])
 
-  /** Call from draw loop to update floaty drag lerp */
-  const updateDragLerp = useCallback((agents: Map<string, Agent>, onAgentDrag: (id: string, x: number, y: number) => void) => {
+  /** Call from draw loop to update floaty drag lerp (agents and tool cards). */
+  const updateDragLerp = useCallback((
+    agents: Map<string, Agent>,
+    onAgentDrag: (id: string, x: number, y: number) => void,
+    toolCalls?: Map<string, ToolCallNode>,
+    onToolCallDrag?: (id: string, x: number, y: number) => void,
+  ) => {
     const lerp = dragLerpRef.current
     if (lerp) {
       const agent = agents.get(lerp.agentId)
@@ -237,6 +259,16 @@ export function useCanvasInteraction({
         const nx = agent.x + (lerp.targetX - agent.x) * lerpFactor
         const ny = agent.y + (lerp.targetY - agent.y) * lerpFactor
         onAgentDrag(lerp.agentId, nx, ny)
+      }
+    }
+    const toolLerp = toolDragLerpRef.current
+    if (toolLerp && toolCalls && onToolCallDrag) {
+      const tool = toolCalls.get(toolLerp.toolCallId)
+      if (tool) {
+        const lerpFactor = ANIM.dragLerp
+        const nx = tool.x + (toolLerp.targetX - tool.x) * lerpFactor
+        const ny = tool.y + (toolLerp.targetY - tool.y) * lerpFactor
+        onToolCallDrag(toolLerp.toolCallId, nx, ny)
       }
     }
   }, [])

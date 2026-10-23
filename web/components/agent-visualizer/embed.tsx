@@ -188,6 +188,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl, hostManaged = f
     setSpeed,
     seekToTime,
     updateAgentPosition,
+    updateToolPosition,
   } = useAgentSimulation({
     useMockData: false,
     externalEvents: pending,
@@ -278,6 +279,7 @@ export function EmbedVisualizer({ sessionId, eventsUrl, metaUrl, hostManaged = f
           onAgentClick={(id) => { setInspectedId(null); selection.handleAgentClick(id) }}
           onAgentHover={selection.setHoveredAgentId}
           onAgentDrag={updateAgentPosition}
+          onToolCallDrag={updateToolPosition}
           onContextMenu={selection.handleContextMenu}
           onToolCallClick={(id) => { setInspectedId(null); selection.handleToolCallClick(id) }}
           selectedToolCallId={selection.selectedToolCallId}

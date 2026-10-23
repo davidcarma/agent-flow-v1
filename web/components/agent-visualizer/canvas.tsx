@@ -35,6 +35,7 @@ interface CanvasProps {
   onAgentClick: (agentId: string | null) => void
   onAgentHover: (agentId: string | null) => void
   onAgentDrag: (agentId: string, x: number, y: number) => void
+  onToolCallDrag?: (toolCallId: string, x: number, y: number) => void
   onContextMenu: (e: React.MouseEvent, type: 'agent' | 'edge' | 'canvas', id?: string) => void
   onToolCallClick?: (toolCallId: string | null) => void
   selectedToolCallId?: string | null
@@ -49,7 +50,7 @@ interface CanvasProps {
 export function AgentCanvas({
   simulationRef,
   selectedAgentId, hoveredAgentId, showStats, showHexGrid, zoomToFitTrigger, pauseAutoFit,
-  onAgentClick, onAgentHover, onAgentDrag, onContextMenu, onToolCallClick, selectedToolCallId, onDiscoveryClick, selectedDiscoveryId, showCostOverlay,
+  onAgentClick, onAgentHover, onAgentDrag, onToolCallDrag, onContextMenu, onToolCallClick, selectedToolCallId, onDiscoveryClick, selectedDiscoveryId, showCostOverlay,
   animationEnabled = true, suspendRendering = false,
 }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -99,7 +100,7 @@ export function AgentCanvas({
     selectedAgentId, hoveredAgentId, showStats, showHexGrid,
     showCostOverlay, selectedToolCallId, selectedDiscoveryId,
     simTime: sim.currentTime, pauseAutoFit, dimensions,
-    onAgentDrag, onAgentClick, onAgentHover, onContextMenu,
+    onAgentDrag, onToolCallDrag, onAgentClick, onAgentHover, onContextMenu,
     onToolCallClick, onDiscoveryClick,
     isDragging: prev?.isDragging ?? false,
   })
@@ -199,7 +200,7 @@ export function AgentCanvas({
         agents, toolCalls, particles, edges, discoveries,
         selectedAgentId, hoveredAgentId, showStats, showHexGrid,
         showCostOverlay, selectedToolCallId, selectedDiscoveryId,
-        simTime, pauseAutoFit, dimensions, onAgentDrag,
+        simTime, pauseAutoFit, dimensions, onAgentDrag, onToolCallDrag,
         isDragging,
       } = drawPropsRef.current
       const transform = transformRef.current
@@ -222,8 +223,8 @@ export function AgentCanvas({
       // Camera physics (inertia + auto-fit)
       updateCamera(isDragging, pauseAutoFit, !renderPolicyRef.current.animationEnabled)
 
-      // Floaty agent drag
-      updateDragLerp(agents, onAgentDrag)
+      // Floaty agent and tool-card drag
+      updateDragLerp(agents, onAgentDrag, toolCalls, onToolCallDrag)
 
       // Detect state changes → visual effects
       detectStateChanges()

@@ -48,6 +48,7 @@ export function AgentVisualizer() {
     setSpeed,
     seekToTime,
     updateAgentPosition,
+    updateToolPosition,
     saveSnapshot,
     restoreSnapshot,
   } = useAgentSimulation({
@@ -289,6 +290,7 @@ export function AgentVisualizer() {
         onAgentClick={selection.handleAgentClick}
         onAgentHover={selection.setHoveredAgentId}
         onAgentDrag={updateAgentPosition}
+        onToolCallDrag={updateToolPosition}
         onContextMenu={selection.handleContextMenu}
         onToolCallClick={selection.handleToolCallClick}
         selectedToolCallId={selection.selectedToolCallId}

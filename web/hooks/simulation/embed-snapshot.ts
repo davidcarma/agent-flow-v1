@@ -51,7 +51,7 @@ export function replayEmbedSnapshot(events: readonly SimulationEvent[], sessionI
   }
   for (const [id, tool] of next.toolCalls) {
     const old = previous?.toolCalls.get(id)
-    next.toolCalls.set(id, { ...tool, opacity: 1, ...(old ? { x: old.x, y: old.y } : {}) })
+    next.toolCalls.set(id, { ...tool, opacity: 1, ...(old ? { x: old.x, y: old.y, pinned: old.pinned } : {}) })
   }
   next.edges = next.edges.map(edge => ({ ...edge, opacity: 1 }))
   next.particles = []

@@ -37,6 +37,20 @@ test('full replacement updates long metadata, removes obsolete nodes and preserv
   assert.equal(state.agents.get('desk')?.messageBubbles.length, 0)
 })
 
+test('a dragged tool card keeps its pinned position across snapshot updates', () => {
+  const events = [
+    event('root', 'agent_spawn', { name: 'root' }),
+    event('call', 'tool_call_start', { agent: 'root', tool: 'vault_search', callId: 'c1', args: '{"path":"/vault/GLOSSARY.md"}' }),
+  ]
+  let state = replayEmbedSnapshot(events, 'proof', ctx)
+  const [id] = [...state.toolCalls.keys()]
+  state.toolCalls.set(id, { ...state.toolCalls.get(id)!, x: 900, y: 700, pinned: true })
+  state = replayEmbedSnapshot(events, 'proof', ctx, state)
+  assert.equal(state.toolCalls.get(id)?.x, 900)
+  assert.equal(state.toolCalls.get(id)?.y, 700)
+  assert.equal(state.toolCalls.get(id)?.pinned, true)
+})
+
 test('hosted work keeps a meaningful label and semantic kind separate from its stable id', () => {
   const state = replayEmbedSnapshot([
     event('stage', 'pjan_stage', { name: 'workflow:freeze-bag', label: 'Freeze evidence bag', kind: 'workflow', status: 'running' }),
